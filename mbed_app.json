@@ -1,0 +1,51 @@
+{
+    "config": {
+        "wifi-ssid": {
+            "help": "WiFi SSID",
+            "value": "\"Blueberry\""
+        },
+        "wifi-password": {
+            "help": "WiFi Password",
+            "value": "\"1.w3txxx\""
+        },
+        "esp-rx-pin": {
+            "help": "ESP8266 module RX pin",
+            "value": "PB_7"
+        },
+        "esp-tx-pin": {
+            "help": "ESP8266 module TX pin",
+            "value": "PB_6"
+        },
+        "mqtt-id": {
+            "help": "MQTT Client id",
+            "value": "\"IoTSolution5649340\""
+        },
+        "mqtt-broker-ip": {
+            "help": "MQTT Broker host ip.",
+            "value": "\"CHANGE_IF_USE_BROKER_IP\""
+        },
+      "mqtt-broker-hostname": {
+            "help": "MQTT Broker resolvable hostname.",
+            "value": "\"test.mosquitto.org\""
+        },
+        "mqtt-broker-port": {
+            "help": "MQTT Broker port",
+            "value": "1883"
+        },
+        "mqtt-pub-interval": {
+            "help": "MQTT publish interval in milliseconds",
+            "value": "3000"
+        },
+        "mqtt-topic": {
+            "help": "MQTT topic to publish",
+            "value": "\"Lokpt5562/245552/yes1\""
+        }
+    },
+    "target_overrides": {
+        "*": {
+            "platform.stdio-convert-newlines": true,
+            "esp8266.provide-default" : false,
+            "esp8266.built-in-dns": true
+        }
+    }
+}
