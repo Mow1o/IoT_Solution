@@ -31,7 +31,7 @@ int sound = 0;
 
 char volume[100];
 int i = 1;
-//char buffer[100];
+char buffer[100];
 
 // PMOD OLED
 Adafruit_SSD1331 OLED(A7, A6, D10, D11, NC, D13); // cs, res, dc, mosi, (nc), sck
@@ -70,7 +70,7 @@ TCPSocket socket;
 
 //ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
 
-void connectWiFi(ESP8266Interface *esp, bool *connected);
+void connectWiFi(ESP8266Interface *esp);
 void pubMQTT(ESP8266Interface *esp);
 // MQTT Protocol
 
@@ -90,26 +90,24 @@ int main() {
 
   set_time(1614069522);
 
-  OLED.begin();
-  BlueEmptyScreen();
+  //OLED.begin();
+  //BlueEmptyScreen();
 
-  bool connected = false;
+  //bool connected = false;
+
+  Thread pubMQTTThread;
+  ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
+  connectWiFi(&esp);
+  pubMQTTThread.start(callback(pubMQTT, &esp));
+
+  while (1);
   
- 
-    
-    Thread pubMQTTThread;
-    ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
-    connectWiFi(&esp, &connected);
-    getMicSound();
-    pubMQTTThread.start(callback(pubMQTT, &esp));
-    ThisThread::sleep_for(1000ms);
-    
-  while(1);
 }
 
 void getTime() {
   time_t seconds = time(NULL); //  https://os.mbed.com/docs/mbed-os/v6.7/apis/time.html
   strftime(Time, 32, "%I:%M:%p\n", localtime(&seconds));
+  ThisThread::sleep_for(500ms);
   // printf("Recorded :%s \r\n", Time); // in mbed OS 6.7 interferes with
   
 }
@@ -145,17 +143,17 @@ void BlueEmptyScreen() {
   OLED.setTextColor(Cyan);
 }
 
-void connectWiFi(ESP8266Interface *esp, bool *connected) {
+void connectWiFi(ESP8266Interface *esp) {
   SocketAddress deviceIP;
 
   printf("\nConnecting wifi..\n");
   int ret = esp->connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD, NSAPI_SECURITY_WPA_WPA2);
   if (ret != 0) {
     printf("\nConnection error\n");
-    *connected = false;
+    //*connected = false;
   } else {
     printf("\nConnection success\n");
-    *connected = true;
+    //*connected = true;
     esp->get_ip_address(&deviceIP);
     printf("IP via DHCP: %s\n", deviceIP.get_ip_address());
   }
@@ -177,18 +175,18 @@ void pubMQTT(ESP8266Interface *esp) {
         char *id = MBED_CONF_APP_MQTT_ID;
         data.clientID.cstring = id;
         
+        getMicSound();
 
         // Publish message to MQTT broker
         char buffer[64];
-        getTime();
-        snprintf(buffer, sizeof(buffer), "{\"time\":\"%s\", \"sound\":\"%d\"}", Time, sound);
-        printf("%s", buffer);
+        sprintf(buffer, "{\"sound\":\"%s\"}", volume);
+        printf("%s\n", buffer);
         MQTT::Message message;
         message.qos = MQTT::QOS0;
         message.retained = false;
         message.dup = false;
         message.payload = (void*)buffer;
-        message.payloadlen = strlen(buffer)+1;
+        message.payloadlen = strlen(buffer);
         socket.open(esp);
         socket.connect(MQTTBroker);
         client.connect(data);
