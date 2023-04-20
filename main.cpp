@@ -94,19 +94,17 @@ int main() {
   BlueEmptyScreen();
 
   bool connected = false;
-  ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
-  connectWiFi(&esp, &connected);
-  // ThisThread::sleep_for(1000ms);
-  if (connected) {
+  
+ 
+    
     Thread pubMQTTThread;
+    ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
+    connectWiFi(&esp, &connected);
+    getMicSound();
     pubMQTTThread.start(callback(pubMQTT, &esp));
     ThisThread::sleep_for(1000ms);
-    while (1) {
-      // do other stuff here if needed
-    }
-  } else {
-    // handle connection error here
-  }
+    
+  while(1);
 }
 
 void getTime() {
@@ -167,26 +165,22 @@ void connectWiFi(ESP8266Interface *esp, bool *connected) {
 void pubMQTT(ESP8266Interface *esp) {
     while (1) {
         // Store broker IP and connect to MQTT broker
-        TCPSocket socket;
-        SocketAddress MQTTBroker;
-
+        
         MQTTClient client(&socket);
         esp->gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME, &MQTTBroker, NSAPI_IPv4, "esp");
         MQTTBroker.set_port(MBED_CONF_APP_MQTT_BROKER_PORT);
-        socket.open(esp);
-        socket.connect(MQTTBroker);
+        
         
         // Connect to MQTT broker
         MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
         data.MQTTVersion = 3;
         char *id = MBED_CONF_APP_MQTT_ID;
         data.clientID.cstring = id;
-        client.connect(data);
+        
 
         // Publish message to MQTT broker
         char buffer[64];
         getTime();
-        getMicSound();
         snprintf(buffer, sizeof(buffer), "{\"time\":\"%s\", \"sound\":\"%d\"}", Time, sound);
         printf("%s", buffer);
         MQTT::Message message;
@@ -195,6 +189,9 @@ void pubMQTT(ESP8266Interface *esp) {
         message.dup = false;
         message.payload = (void*)buffer;
         message.payloadlen = strlen(buffer)+1;
+        socket.open(esp);
+        socket.connect(MQTTBroker);
+        client.connect(data);
         client.publish("Lokpt5562/245552/yes1", message);
 
         // Disconnect from MQTT broker and wait for next publish
