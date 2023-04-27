@@ -1,11 +1,8 @@
 This program is coded with Mbed Studio
 
-
 Libraries used:
  
 mbed-mqtt master
-Adafruit-GFX-MbedOS6
-Adafruit_SSD1331_MbedOS6
 
 Technical components:
 
@@ -20,7 +17,6 @@ Technical specifications:
 Starting the program it will make variable esp for the ESP8266Interface which will be used for making WiFi connection, getting the local stored IP address.
 
 Inside the main function we set comments for each variable and being function called for easier reading of the program.
-
 
 Error checking:
 
