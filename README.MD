@@ -12,7 +12,8 @@ WiFi-Mod-ESP8226
 
 
 Technical specifications:
-Set in mbed_app.json the values for wifi & mqtt.
+Create a new program in Mbed and set target Microcontroller as L432KC, install libraries, set in mbed_app.json the values for wifi & mqtt you should be good to go.
+
 Don't use WiFi-Mod-ESP8266 MOSI pin, leave it empty so it doesn't break the program.
 
 Error checking:
