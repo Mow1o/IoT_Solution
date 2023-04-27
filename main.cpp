@@ -1,42 +1,31 @@
+// Mbed LIBRARY
 #include "mbed.h"
+#include <mutex>
+#include <ctime>
 // SPI LIBRARY
-#include "SPI.h"
-
+#include <SPI.h>
 // NETWORKING
 #include "ESP8266Interface.h"
-#include "MQTTClientMbedOs.h"
-//#include "MQTTNetwork.h"
-// PMOD OLED LIBRARIES
-#include "Adafruit_GFX.h" // we will get similar code working than in Arduino-boards.
-#include "Adafruit_SSD1331.h" // By using the Adafruit SSD1331 library and Adafruit GFX library
+#include <MQTTClientMbedOs.h>
 
+#include <ctime>
+// LED pins
+DigitalOut LedYellow(A7); // Program is working correctly 
+DigitalOut LedRed(D1); // Error has been occured.
+DigitalOut LedGreen(D2); // WiFi setup, connection setup, publish
 
-// MAIN MBED LIBRARY
+// MICROPHONE pins
+SPI mic(D11, D12, D13); // SET SPI
+DigitalOut micCS(D3);
 
-// LEDS
-DigitalOut ledYellow(D9);
-// DigitalOut ledGreen(D4);
-// DigitalOut ledRed(D5);
-// DigitalOut ledWhite(A1);
-DigitalOut LED(D1);
-
-// MICROPHONE
+//MICROPHONE function & global variables
+ int raw = 0; // 16 bits from MIC3
+ int sound32bit = 0;
+ int sound = 0;
+ char volume[64];
+ char buffer[64];
+bool connected = true;
 void getMicSound();
-SPI mic(NC, D12, A4); // SET SPI
-DigitalOut micCS(A3);
-
-int raw = 0; // 16 bits from MIC3
-int sound32bit = 0;
-int sound = 0;
-
-char volume[100];
-int i = 1;
-char buffer[100];
-
-// PMOD OLED
-Adafruit_SSD1331 OLED(A7, A6, D10, D11, NC, D13); // cs, res, dc, mosi, (nc), sck
-DigitalOut VCCEN(D2);
-DigitalOut PMODEN(D3);
 
 // Definition of colours on the OLED display
 #define Black 0x0000
@@ -48,152 +37,472 @@ DigitalOut PMODEN(D3);
 #define Yellow 0xFFE0
 #define White 0xFFFF
 
-void BlueEmptyScreen();
-
-// BUFF SIZE
-#define BUFF_SIZE 128
-
-// TIME
+// TIME variable & function
 char Time[32];
 void getTime();
 
-// CONNECTION
-
-bool connection_setup = false;
-
-  // Store device IP
-SocketAddress deviceIP;                                                   
-  // Store broker IP
+//Store device IP
+SocketAddress deviceIP;
+//Store broker IP
 SocketAddress MQTTBroker;
-
+// Store TCP socket
 TCPSocket socket;
 
-//ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
+//Functions
 
 void connectWiFi(ESP8266Interface *esp);
-void pubMQTT(ESP8266Interface *esp);
-// MQTT Protocol
+//void pubMQTT(ESP8266Interface *esp);
+void netcheck(ESP8266Interface *esp);
 
-// Microphone
-
-
+// esp interface and set communication pins
+ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
 
 // MAIN PROGRAM
 int main() {
-  LED = 0;
-  VCCEN = 1;
-  PMODEN = 1;
-  // ThisThread::sleep_for(2000ms);
-  LED = 1;
-  // ThisThread::sleep_for(2000ms);
-  LED = 0;
+
+  LedYellow = 1;
+  // MAIN VARIABLES //
+  int i = 0;
 
   set_time(1614069522);
-
-  //OLED.begin();
-  //BlueEmptyScreen();
-
-  //bool connected = false;
-
-  Thread pubMQTTThread;
-  ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
+  // CONNECT SETUP function
   connectWiFi(&esp);
-  pubMQTTThread.start(callback(pubMQTT, &esp));
 
-  while (1);
-  
+
+  //Create MQTTClient
+  MQTTClient client(&socket);
+  //Connection to test.mosquitto.org
+  nsapi_error_t result = esp.gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME,&MQTTBroker, NSAPI_IPv4, "esp");
+  if (result != NSAPI_ERROR_OK) {
+    printf("Failed to get MQTT broker IP address (error code %d)\n", result);
+    //Red light for showing something went wrong.
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+  } else {
+    printf("MQTT broker IP archived\n");
+    //Green light for showing everything OK.
+    LedGreen = 1; 
+    ThisThread::sleep_for(2000ms);
+    LedGreen = 0;
+  }
+
+  // SET MQTT broker connection port from mbed_app.json
+  MQTTBroker.set_port(MBED_CONF_APP_MQTT_BROKER_PORT);
+
+  // Connect to MQTT broker
+  MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
+  data.MQTTVersion = 3;
+  char *id = MBED_CONF_APP_MQTT_ID;
+  data.clientID.cstring = id;
+
+  MQTT::Message message;
+  message.qos = MQTT::QOS0;
+  message.retained = false;
+  message.dup = false;
+  message.payload = (void*)buffer;
+  message.payloadlen = 64;
+
+  result = socket.open(&esp);
+  if (result != NSAPI_ERROR_OK) {
+    printf("Failed to open socket (error code %d)\n", result);
+    //Red light for showing something went wrong.
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+  } else {
+    printf("Socket is open\n");
+    //Green light for showing everything OK.
+    LedGreen = 1; 
+    ThisThread::sleep_for(2000ms);
+    LedGreen = 0;
+  }
+  ThisThread::sleep_for(100ms);
+  result = socket.connect(MQTTBroker);
+  if (result != NSAPI_ERROR_OK) {
+    printf("Failed to connect to MQTT broker (error code %d)\n", result);
+    //Red light for showing something went wrong.
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+  } else {
+    printf("Connected to the MQTT broker\n");
+    //Green light for showing everything OK.
+    LedGreen = 1; 
+    ThisThread::sleep_for(2000ms);
+    LedGreen = 0;
+  }
+  ThisThread::sleep_for(100ms);
+  result = client.connect(data);
+  if (result != 0) {
+    printf("Failed to connect MQTT client (error code %d)\n", result);
+    //Red light for showing something went wrong.
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+  } else {
+    printf("Connected to the MQTT client\n");
+    //Green light for showing everything OK.
+    LedGreen = 1; 
+    ThisThread::sleep_for(2000ms);
+    LedGreen = 0;
+  }
+    
+    while (i < 5 && connected) {
+    i += 1;
+    getMicSound(); // Get the value from microphone and print it to memory on "sound" variable.
+    printf("%s\n", buffer);
+    netcheck(&esp); // Network check to see connection is still up.
+    result = client.publish(MBED_CONF_APP_MQTT_TOPIC, message);
+    if (result != 0) {
+    printf("Failed to publish the message (error code %d)\n", result);
+    //Red light for showing something went wrong.
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+    ThisThread::sleep_for(2000ms);
+    connected = false;
+    } else {
+    ThisThread::sleep_for(2000ms);
+    printf("Published the message correctly\n");
+    //Green light for showing everything OK.
+    LedGreen = 1; 
+    ThisThread::sleep_for(2000ms);
+    LedGreen = 0;
+    }
+    sound = 0; // We set the sound variable back to 0 so while loop can continue inside getMicSound function.
+    }
+    LedYellow = 0;
+    printf("MQTT connection disconnected\n");
+    ThisThread::sleep_for(2000ms);
+    client.disconnect();
+    socket.close();
+    LedRed = 1;
+
 }
-
 void getTime() {
+  
   time_t seconds = time(NULL); //  https://os.mbed.com/docs/mbed-os/v6.7/apis/time.html
   strftime(Time, 32, "%I:%M:%p\n", localtime(&seconds));
-  ThisThread::sleep_for(500ms);
+  ThisThread::sleep_for(200ms);
   // printf("Recorded :%s \r\n", Time); // in mbed OS 6.7 interferes with
-  
 }
-
 void getMicSound() {
+    while(sound < 20) 
+    {
+    ThisThread::sleep_for(10ms);
     // The function for reading the digital value from the mic
-    micCS.write(1); // DESELECT
+    micCS.write(1); // DESELECT chip
 
     mic.format(16, 0);
     mic.frequency(1000000);
     ThisThread::sleep_for(100ms);
 
-    micCS.write(0); // SELECT
+    micCS.write(0); // SELECT chip
     ThisThread::sleep_for(1ms);
 
     raw = mic.write(0x0000); // Dummy data
     ThisThread::sleep_for(1ms);
     micCS.write(1); // DESELECT
-    //printf("16 bits MIC3 = 0x%X", raw);
-
+    // printf("16 bits MIC3 = 0x%X", raw)
+    ThisThread::sleep_for(10ms);
     sound32bit = raw << 22; // 22 bits to the left to create 32 bit two's complement
+    ThisThread::sleep_for(10ms);
     sound = sound32bit / 16777216; // 2 exp24 = 16 7777 216  means shifting 24
-                                 // bits left without shifting the sign!
-                              
-    sprintf(volume, "sound 12 bit = %d", sound);
-    //ThisThread::sleep_for(1000ms);
-}
-
-
-void BlueEmptyScreen() {
-  OLED.clearScreen();
-  OLED.fillScreen(Blue);
-  OLED.setTextColor(Cyan);
-}
-
-void connectWiFi(ESP8266Interface *esp) {
-  SocketAddress deviceIP;
-
-  printf("\nConnecting wifi..\n");
-  int ret = esp->connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD, NSAPI_SECURITY_WPA_WPA2);
-  if (ret != 0) {
-    printf("\nConnection error\n");
-    //*connected = false;
-  } else {
-    printf("\nConnection success\n");
-    //*connected = true;
-    esp->get_ip_address(&deviceIP);
-    printf("IP via DHCP: %s\n", deviceIP.get_ip_address());
-  }
-  
-}
-
-void pubMQTT(ESP8266Interface *esp) {
-    while (1) {
-        // Store broker IP and connect to MQTT broker
-        
-        MQTTClient client(&socket);
-        esp->gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME, &MQTTBroker, NSAPI_IPv4, "esp");
-        MQTTBroker.set_port(MBED_CONF_APP_MQTT_BROKER_PORT);
-        
-        
-        // Connect to MQTT broker
-        MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
-        data.MQTTVersion = 3;
-        char *id = MBED_CONF_APP_MQTT_ID;
-        data.clientID.cstring = id;
-        
-        getMicSound();
-
-        // Publish message to MQTT broker
-        char buffer[64];
-        sprintf(buffer, "{\"sound\":\"%s\"}", volume);
-        printf("%s\n", buffer);
-        MQTT::Message message;
-        message.qos = MQTT::QOS0;
-        message.retained = false;
-        message.dup = false;
-        message.payload = (void*)buffer;
-        message.payloadlen = strlen(buffer);
-        socket.open(esp);
-        socket.connect(MQTTBroker);
-        client.connect(data);
-        client.publish("Lokpt5562/245552/yes1", message);
-
-        // Disconnect from MQTT broker and wait for next publish
-        client.disconnect();
-        ThisThread::sleep_for(1000ms);
+                                   // bits left without shifting the sign!
+    printf("Sound value: %d\n ", sound);
+    
+    if (sound > 20) {
+    getTime(); // Calling Time function to get the current time
+    printf("Sound exceeds 20, send message to the broker\n ");
+    sprintf(buffer, "\"Value from Microphone and Time: %d time: %s\"", sound, Time);
+    }
+    ThisThread::sleep_for(320ms);
     }
 }
+
+void netcheck(ESP8266Interface *esp) {
+    nsapi_error_t result = esp->get_connection_status();
+    if (result != NSAPI_ERROR_OK) {
+    printf("Connection status: OK\n");
+    }
+    else {
+    printf("No connection, connecting again: (error code %d)\n", result);
+    connectWiFi(esp);
+    }
+}
+
+
+void connectWiFi(ESP8266Interface *esp)
+{
+    printf("\nConnecting wifi..\n");
+
+  int ret = esp->connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD,NSAPI_SECURITY_WPA_WPA2);
+  if (ret != 0) {
+    printf("\nConnection error\n");
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+    connected = false;
+  } else {
+    printf("\nConnection success\n");
+    connected = true;
+    LedGreen = 1;
+    ThisThread::sleep_for(1000ms);
+    LedGreen = 0;
+    int getip = esp->get_ip_address(&deviceIP);
+    printf("IP via DHCP: %s\n", deviceIP.get_ip_address());
+  }
+
+}
+
+/*
+
+printf("\nConnecting wifi..\n");
+
+  int ret = esp.connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD,NSAPI_SECURITY_WPA_WPA2);
+  if (ret != 0) {
+    printf("\nConnection error\n");
+    LedWhite = 1;
+    ThisThread::sleep_for(1000ms);
+    LedWhite = 0;
+    connected = false;
+  } else {
+    printf("\nConnection success\n");
+    connected = true;
+    LedGreen = 1;
+    ThisThread::sleep_for(1000ms);
+    LedGreen = 0;
+    int getip = esp.get_ip_address(&deviceIP);
+    if (getip == NULL){
+        printf("IP retrieval Error");
+    }
+    printf("IP via DHCP: %s\n", deviceIP.get_ip_address());
+  }
+
+    MQTTClient client(&socket);
+
+  nsapi_error_t result = esp.gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME,&MQTTBroker, NSAPI_IPv4, "esp");
+  if (result != NSAPI_ERROR_OK) {
+    printf("Failed to get MQTT broker IP address (error code %d)\n", result);
+    LedWhite = 1;
+    ThisThread::sleep_for(1000ms);
+    LedWhite = 0;
+  } else {
+    printf("MQTT broker IP achieved\n");
+    LedGreen = 1;
+    ThisThread::sleep_for(1000ms);
+    ledYellow = 0;
+  }
+
+  bool connected = false;
+  char buffer[64];
+  int i = 0;
+  
+
+  //sprintf(buffer, "lähteekö tämä sanoma?");
+
+
+  
+  // esp->get_ip_address(&deviceIP);
+
+  MQTTBroker.set_port(MBED_CONF_APP_MQTT_BROKER_PORT);
+
+  // Connect to MQTT broker
+  MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
+  data.MQTTVersion = 3;
+  char *id = MBED_CONF_APP_MQTT_ID;
+  data.clientID.cstring = id;
+
+  MQTT::Message message;
+  message.qos = MQTT::QOS0;
+  message.retained = false;
+  message.dup = false;
+  message.payload = (void*)buffer;
+  message.payloadlen = 64;
+
+
+  
+  result = socket.open(&esp);
+  if (result != NSAPI_ERROR_OK) {
+    printf("Failed to open socket (error code %d)\n", result);
+    LedWhite = 1;
+    ThisThread::sleep_for(1000ms);
+    LedWhite = 0;
+  } else {
+    printf("Socket is open\n");
+    ledYellow = 1;
+    ThisThread::sleep_for(1000ms);
+    ledYellow = 0;
+  }
+  ThisThread::sleep_for(100ms);
+  result = socket.connect(MQTTBroker);
+  if (result != NSAPI_ERROR_OK) {
+    printf("Failed to connect to MQTT broker (error code %d)\n", result);
+    LedWhite = 1;
+    ThisThread::sleep_for(1000ms);
+    LedWhite = 0;
+  } else {
+    printf("Connected to the MQTT broker\n");
+    ledYellow = 1;
+    ThisThread::sleep_for(1000ms);
+    ledYellow = 0;
+  }
+  ThisThread::sleep_for(100ms);
+  result = client.connect(data);
+  if (result != 0) {
+    printf("Failed to connect MQTT client (error code %d)\n", result);
+    LedWhite = 1;
+    ThisThread::sleep_for(1000ms);
+    LedWhite = 0;
+  } else {
+    printf("Connected to the MQTT client\n");
+    ledYellow = 1;
+    ThisThread::sleep_for(1000ms);
+    ledYellow = 0;
+  }
+    
+    //getMicThread.start(callback(getMicSound));
+
+    while (i < 30) {
+    i += 1;
+    //printf("%s", buffer);
+    message.payload = (void*)buffer;
+    message.payloadlen = 64;
+    sprintf(buffer, "sound 12 bit");
+    printf("%s", buffer);
+    client.publish(MBED_CONF_APP_MQTT_TOPIC, message);
+    
+    ThisThread::sleep_for(2000ms);
+    
+    }
+    
+    printf("MQTT connection disconnected");
+    ThisThread::sleep_for(2000ms);
+    client.disconnect();
+
+
+
+
+
+
+*/
+
+
+/*
+
+void pubMQTT(ESP8266Interface *esp) {
+
+    MQTTClient client(&socket);
+
+    // Use with IP
+    // SocketAddress MQTTBroker(MBED_CONF_APP_MQTT_BROKER_IP,
+    // MBED_CONF_APP_MQTT_BROKER_PORT);
+
+    // Use with DNS
+    nsapi_error_t result = esp->gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME, &MQTTBroker, NSAPI_IPv4, "esp");
+    if (result != NSAPI_ERROR_OK) {
+      printf("Failed to get MQTT broker IP address (error code %d)\n", result);
+    } else {
+      printf("MQTT broker IP archived\n");
+    }
+
+    MQTTBroker.set_port(MBED_CONF_APP_MQTT_BROKER_PORT);
+
+    MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
+    data.MQTTVersion = 3;
+    char *id = MBED_CONF_APP_MQTT_ID;
+    data.clientID.cstring = id;
+
+    
+    char buffer[64];
+
+    sprintf(buffer, "%s", volume);
+
+    MQTT::Message msg;
+    msg.qos = MQTT::QOS0;
+    msg.retained = false;
+    msg.dup = false;
+    msg.payload = (void *)buffer;
+    msg.payloadlen = 64;
+    
+    result = socket.open(esp);
+    if (result != NSAPI_ERROR_OK) {
+      printf("Failed to open socket(error code %d)\n", result);
+      LedWhite = 1;
+      ThisThread::sleep_for(1000ms);
+      LedWhite = 0;
+    } else {
+      printf("Socket is open\n");
+      ledYellow = 1;
+      ThisThread::sleep_for(1000ms);
+      ledYellow = 0;
+    }
+    ThisThread::sleep_for(100ms);
+    result = socket.connect(MQTTBroker);
+    if (result != NSAPI_ERROR_OK) {
+      printf("Failed to connect to MQTT broker (error code %d)\n", result);
+      LedWhite = 1;
+      ThisThread::sleep_for(1000ms);
+      LedWhite = 0;
+    } else {
+      printf("Connected to the MQTT broker\n");
+      ledYellow = 1;
+      ThisThread::sleep_for(1000ms);
+      ledYellow = 0;
+    }
+    ThisThread::sleep_for(100ms);
+    result = client.connect(data);
+    if (result != 0) {
+      printf("Failed to connect MQTT client (error code %d)\n", result);
+      LedWhite = 1;
+      ThisThread::sleep_for(1000ms);
+      LedWhite = 0;
+    } else {
+      printf("Connected to the MQTT client\n");
+      ledYellow = 1;
+      ThisThread::sleep_for(1000ms);
+      ledYellow = 0;
+    }
+    
+    client.publish(MBED_CONF_APP_MQTT_TOPIC, msg);
+    printf("This was sent to the MQTT broker: %s\n", buffer);
+    
+    // client.yield(100);
+    client.disconnect();
+    socket.close();
+    ThisThread::sleep_for(2000ms);
+
+
+
+printf("\nConnecting wifi..\n");
+
+  int ret = esp.connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD,NSAPI_SECURITY_WPA_WPA2);
+  if (ret != 0) {
+    printf("\nConnection error\n");
+    LedRed = 1;
+    ThisThread::sleep_for(1000ms);
+    LedRed = 0;
+    connected = false;
+  } else {
+    printf("\nConnection success\n");
+    connected = true;
+    LedGreen = 1;
+    ThisThread::sleep_for(1000ms);
+    LedGreen = 0;
+    int getip = esp.get_ip_address(&deviceIP);
+    printf("IP via DHCP: %s\n", deviceIP.get_ip_address());
+  }
+
+
+
+*/
+
+
+
+
+
+
+
+
+     
