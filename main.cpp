@@ -235,7 +235,7 @@ void netcheck(ESP8266Interface *esp) {
 
 void connectWiFi(ESP8266Interface *esp)
 {
-    printf("\nConnecting wifi..\n");
+  printf("\nConnecting wifi..\n");
 
   int ret = esp->connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD,NSAPI_SECURITY_WPA_WPA2);
   if (ret != 0) {
