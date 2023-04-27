@@ -7,16 +7,13 @@ mbed-mqtt master
 Technical components:
 
 L432KC Microcontroller
-PMOD OLED RGB
 PMOD MIC3
-WiFi Mod ESP8226
-2x LEDs
+WiFi-Mod-ESP8226
+
 
 Technical specifications:
 
-Starting the program it will make variable esp for the ESP8266Interface which will be used for making WiFi connection, getting the local stored IP address.
-
-Inside the main function we set comments for each variable and being function called for easier reading of the program.
+Don't use WiFi-Mod-ESP8266 MOSI pin, leave it empty so it doesn't break the program.
 
 Error checking:
 
