@@ -148,7 +148,7 @@ int main() {
     LedGreen = 0;
   }
     
-    while (i < 5 && connected) {
+    while (i < 50 && connected) {
     i += 1;
     getMicSound(); // Get the value from microphone and print it to memory on "sound" variable.
     printf("%s\n", buffer);
@@ -188,7 +188,7 @@ void getTime() {
   // printf("Recorded :%s \r\n", Time); // in mbed OS 6.7 interferes with
 }
 void getMicSound() {
-    while(sound < 20) 
+    while(sound < 50) 
     {
     ThisThread::sleep_for(10ms);
     // The function for reading the digital value from the mic
@@ -212,7 +212,7 @@ void getMicSound() {
                                    // bits left without shifting the sign!
     printf("Sound value: %d\n ", sound);
     
-    if (sound > 20) {
+    if (sound > 50) {
     getTime(); // Calling Time function to get the current time
     printf("Sound exceeds 20, send message to the broker\n ");
     sprintf(buffer, "\"Value from Microphone and Time: %d time: %s\"", sound, Time);
